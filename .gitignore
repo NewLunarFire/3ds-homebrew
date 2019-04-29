@@ -1,0 +1,8 @@
+.vscode/
+build/
+romfs/
+
+3dslink
+*.3dsx
+*.elf
+*.smdh
