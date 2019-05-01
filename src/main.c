@@ -8,54 +8,10 @@
 #include <stdlib.h>
 #include <time.h>
 
-#define MAX_SPRITES   768
-#define SCREEN_WIDTH  400
-#define SCREEN_HEIGHT 240
+#include "main.h"
+#include "levels/1.h"
 
-#define VOID	0
-#define GUY		0
-#define BOX		1
-#define BRICK	2
-#define DOOR	3
-
-#define LEFT 1
-#define RIGHT 0
-
-//#define OFFSET(x, y) ((y * 20) + x)
-//#define POS2OFFSET(p) OFFSET(p.x, p.y)
-#define SCREEN(x, y) (x * 20), ((y * 20) + 140)
-#define POS2SCREEN(p) SCREEN(p.x, p.y)
-
-typedef struct Pos {
-	uint x;
-	uint y;
-} Pos;
-
-typedef struct Boxes {
-	Pos positions[2];
-	uint count;
-	int held;
-} Boxes;
-
-typedef struct Guy {
-	Pos position;
-	uint direction;
-} Guy;
-
-typedef struct Level {
-	unsigned char* layout;
-	size_t width;
-	size_t height;
-} Level;
-
-
-#define GET_TILE(level, x, y) level.layout[(y * level.width) + x]
-#define GET_TILE_P(level, p)  GET_TILE(level, p.x, p.y)
-
-const static unsigned char compressedLevel[] = {BRICK, 1, VOID, 18, BRICK, 2, VOID, 18, BRICK, 2, VOID, 3, BRICK, 1, VOID, 7, BRICK, 1, VOID, 6, BRICK, 2, DOOR, 1, VOID, 2, BRICK, 1, VOID, 3, BRICK, 1, VOID, 1, BOX, 1, VOID, 1, BRICK, 1, VOID, 1, BOX, 1, VOID, 4, BRICK, 21, VOID, 0};
-const size_t level_width = 20;
-const size_t level_height = 5;
-
+#define CAMERA(camera, xpos, ypos) (((xpos - camera.x) * 24.0) - 12.0), ((ypos - camera.y) * 24.0)
 
 unsigned char* uncompressLevel(const unsigned char* level, uint width, uint height) {
 	size_t i, j, k;
@@ -103,12 +59,15 @@ int findCollision(Pos a, Pos* b, size_t len_b) {
 	return -1;
 }
 
-void renderBackground(Level level, C2D_Image* images) {
+void renderBackground(Level level, C2D_Image* images, Camera camera) {
+
+	C2D_DrawImageAt(images[BACKGROUND], (0 - camera.x) * 12.0, 0, -1.0, NULL, (float)SCREEN_WIDTH * 1.5 / BACKGROUND_WIDTH, (float)SCREEN_HEIGHT / BACKGROUND_HEIGHT);
+
 	for(size_t x = 0; x < level.width; x++) {
 		for(size_t y = 0; y < level.height; y++) {
 			unsigned char tile = GET_TILE(level, x, y);
 			if(tile != VOID) {
-				C2D_DrawImageAt(images[tile], SCREEN(x, y), -1.0, NULL, 20.0 / 24.0, 20.0 / 24.0);
+				C2D_DrawImageAt(images[tile], CAMERA(camera, x, y), -1.0, NULL, 1.0, 1.0);
 			}
 		}
 	}
@@ -158,11 +117,13 @@ int main(int argc, char* argv[]) {
 		.direction = LEFT
 	};
 
+	Camera camera;
+
 	Boxes boxes;
 	boxes.held = -1;
 
 	C2D_SpriteSheet spriteSheet;
-	C2D_Image images[4];
+	C2D_Image images[5];
 	C2D_Sprite guy_sprite;
 	C2D_Sprite box_sprites[2];
 
@@ -182,12 +143,12 @@ int main(int argc, char* argv[]) {
 	if (!spriteSheet) svcBreak(USERBREAK_PANIC);
 
 	// Load images
-	for(size_t i = 0; i < 4; i++) {
+	for(size_t i = 0; i < 5; i++) {
 		images[i] = C2D_SpriteSheetGetImage(spriteSheet, i);
 	}
 
 	// Uncompress the RLC level
-	level.layout = uncompressLevel(compressedLevel, 20, 5);
+	level.layout = uncompressLevel(level1.data, 20, 5);
 	
 	// Find boxes and remove them from level
 	findBoxes(level, &boxes);
@@ -197,13 +158,10 @@ int main(int argc, char* argv[]) {
 
 	for(size_t i = 0; i < boxes.count; i++) {
 		C2D_SpriteFromImage(&box_sprites[i], images[BOX]);
-		C2D_SpriteSetPos(&box_sprites[i], POS2SCREEN(boxes.positions[i]));//box_pos[i].x * 20, (box_pos[i].y * 20) + 140);
-		C2D_SpriteScale(&box_sprites[i], 20.0 / 24.0, 20.0 / 24.0);
 	}
 
 	C2D_SpriteFromSheet(&guy_sprite, spriteSheet, GUY);
-	C2D_SpriteSetPos(&guy_sprite, guy.position.x * 20, (guy.position.y * 20) + 140);
-	C2D_SpriteScale(&guy_sprite, -20.0 / 24.0, 20.0 / 24.0);
+	C2D_SpriteScale(&guy_sprite, -1.0, 1.0);
 	
 	// Main loop
 	while (aptMainLoop())
@@ -284,7 +242,7 @@ int main(int argc, char* argv[]) {
 			free(level.layout);
 
 			// Uncompress the RLC level
-			level.layout = uncompressLevel(compressedLevel, 20, 5);
+			level.layout = uncompressLevel(level1.data, 20, 5);
 			
 			// Find boxes and remove them from level
 			findBoxes(level, &boxes);
@@ -297,11 +255,24 @@ int main(int argc, char* argv[]) {
 			guy.position.y = 3;
 		}
 
+		//Get Camera Position
+		camera.x = guy.position.x - 8;
+		//camera.y = guy->position.y - 8;
+		camera.y = -5;
+		if(camera.x < 0) {
+			camera.x = 0;
+		}
+
+		if(camera.x > (level.width - 18)) {
+			camera.x = level.width - 18;
+		}
+
 		//Update sprites position
 		for(size_t i = 0; i < boxes.count; i++) {
-			C2D_SpriteSetPos(&box_sprites[i], POS2SCREEN(boxes.positions[i]));
+			C2D_SpriteSetPos(&box_sprites[i], CAMERA(camera, boxes.positions[i].x, boxes.positions[i].y));
 		}
-		C2D_SpriteSetPos(&guy_sprite, POS2SCREEN(guy.position));
+			
+		C2D_SpriteSetPos(&guy_sprite, CAMERA(camera, guy.position.x, guy.position.y));
 
 		//printf("\x1b[2;1H[Box 1] x: %03.3f, y: %03.3f\x1b[K", boxes[0].params.pos.x, boxes[0].params.pos.y);
 		//printf("\x1b[3;1H[Box 2] x: %03.3f, y: %03.3f\x1b[K", boxes[1].params.pos.x, boxes[1].params.pos.y);
@@ -318,7 +289,7 @@ int main(int argc, char* argv[]) {
 		C2D_TargetClear(top, C2D_Color32f(0.2f, 0.2f, 1.0f, 1.0f));
 		C2D_SceneBegin(top);
 
-		renderBackground(level, images);
+		renderBackground(level, images, camera);
 		renderSprites(guy_sprite, box_sprites, boxes.count);
 
 		C3D_FrameEnd(0);
